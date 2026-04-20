@@ -15,7 +15,7 @@ class DQN(nn.Module):
     
 
 if __name__ == "__main__":
-    input_dim = 128 
+    input_dim = 12
     output_dim = 2
     net = DQN(input_dim, output_dim)
     state = torch.randn(1, input_dim)
