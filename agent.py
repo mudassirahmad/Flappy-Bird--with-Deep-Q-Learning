@@ -13,7 +13,7 @@ import argparse
 import os
 import matplotlib
 import matplotlib.pyplot as plt
-
+import shutil
 
 # For printing date and time
 DATE_FORMAT = "%m-%d %H:%M:%S"
@@ -25,7 +25,9 @@ os.makedirs(RUNS_DIR, exist_ok=True)
 # 'Agg': used to generate plots as images and save them to a file instead of rendering to screen
 matplotlib.use('Agg')
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")   
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+#device = 'cpu'
+print(f"Training on: {device}")
 
 class FlappyBirdAgent:
 
@@ -33,6 +35,8 @@ class FlappyBirdAgent:
         with open("hyperparameters.yml", "r") as f:
             all_hyperparameters = yaml.safe_load(f)
             hyperparameters = all_hyperparameters[hyperparameters_set]
+
+        self.hyperparameters_set = hyperparameters_set
 
         self.replay_memory_size = hyperparameters["replay_memory_size"]
         self.mini_batch_size = hyperparameters["mini_batch_size"]
@@ -42,6 +46,7 @@ class FlappyBirdAgent:
         self.learning_rate_a = hyperparameters["learning_rate_a"]
         self.discount_factor = hyperparameters["discount_factor_g"]
         self.step_on_reward = hyperparameters["step_on_reward"]
+        self.network_sync_rate = hyperparameters["network_sync_rate"]
         self.fc1_nodes = hyperparameters["fc1_nodes"]
         self.env_make_params = hyperparameters.get("env_make_params",{})
 
@@ -52,9 +57,22 @@ class FlappyBirdAgent:
 
 
         # Path to Run info
-        self.LOG_FILE   = os.path.join(RUNS_DIR, f'{self.hyperparameter_set}.log')
-        self.MODEL_FILE = os.path.join(RUNS_DIR, f'{self.hyperparameter_set}.pt')
-        self.GRAPH_FILE = os.path.join(RUNS_DIR, f'{self.hyperparameter_set}.png')
+        self.LOG_FILE   = os.path.join(RUNS_DIR, f'{self.hyperparameters_set}.log')
+        self.MODEL_FILE = os.path.join(RUNS_DIR, f'{self.hyperparameters_set}.pt')
+        self.GRAPH_FILE = os.path.join(RUNS_DIR, f'{self.hyperparameters_set}.png')
+
+
+    def save_to_kaggle_output(self):
+        os.makedirs('/kaggle/output/runs', exist_ok=True)
+        # Copy model
+        if os.path.exists(self.MODEL_FILE):
+            shutil.copy(self.MODEL_FILE, f'/kaggle/output/runs/{self.hyperparameters_set}.pt')
+        # Copy graph
+        if os.path.exists(self.GRAPH_FILE):
+            shutil.copy(self.GRAPH_FILE, f'/kaggle/output/runs/{self.hyperparameters_set}.png')
+        # Copy log
+        if os.path.exists(self.LOG_FILE):
+            shutil.copy(self.LOG_FILE, f'/kaggle/output/runs/{self.hyperparameters_set}.log')
 
     def run(self, is_training=True, render=False): 
 
@@ -91,9 +109,14 @@ class FlappyBirdAgent:
         else:
             policy.load_state_dict(torch.load(self.MODEL_FILE))
             policy.eval()
+            epsilon = self.epsilon_min
         
         for episode in itertools.count():
             state, _ = env.reset()
+
+            if not is_training and episode >= 10:  # runs 10 test episodes then stops
+                break
+
             state= torch.tensor(state, dtype=torch.float32, device=device)
             
             terminated = False
@@ -108,15 +131,16 @@ class FlappyBirdAgent:
                     with torch.no_grad():
                         action = policy(state.unsqueeze(0)).squeeze().argmax()
                     
-                # Next action:
-                # (feed the observation to your agent here)
-                action = env.action_space.sample()
-
+                
                 # Processing:
-                new_state, reward, terminated, _, info = env.step(action.item())
+                new_state, reward, terminated, truncated, info = env.step(action.item())
+                # print(f"Terminated: {terminated}, Truncated: {truncated}, Reward: {episode_reward}")
 
                 new_state = torch.tensor(new_state, dtype=torch.float32, device=device)
                 reward = torch.tensor(reward, dtype=torch.float32, device=device)
+                
+                if is_training:
+                    replay_memory.append((state, action, new_state, reward, terminated))
 
                 episode_reward += reward
                 # Store the model when the best reward is achieved
@@ -128,6 +152,7 @@ class FlappyBirdAgent:
                             log_file.write(log_message + "\n")
                         torch.save(policy.state_dict(), self.MODEL_FILE)
                         best_reward = episode_reward
+                        self.save_to_kaggle_output()
 
                     current_time = datetime.now()
                     if current_time - last_graph_update_time >= timedelta(seconds=0):
@@ -141,16 +166,17 @@ class FlappyBirdAgent:
                 
             rewards_per_episode.append(episode_reward)
 
-            epsilon = max(self.epsilon_min, epsilon * self.epsilon_decay)
-            epsilon_history.append(epsilon)
+            if is_training:
+                epsilon = max(self.epsilon_min, epsilon * self.epsilon_decay)
+                epsilon_history.append(epsilon)
 
 
-            if len(replay_memory) >= self.mini_batch_size and is_training:
-                
+            if is_training and len(replay_memory) >= self.mini_batch_size:
                 mini_batch = replay_memory.sample(self.mini_batch_size)
                 self.optimize_model(mini_batch, policy, target)
 
-                if step_count < self.network_sync_rate:
+                step_count += 1
+                if step_count >= self.network_sync_rate:
                     target.load_state_dict(policy.state_dict())
                     step_count = 0
 
@@ -173,10 +199,11 @@ class FlappyBirdAgent:
 
         fig.savefig(self.GRAPH_FILE)
         plt.close(fig)
+        self.save_to_kaggle_output()
 
 
     def optimize_model(self, mini_batch, policy, target):
-        state, action, new_state, reward, terminated = zip(mini_batch)
+        state, action, new_state, reward, terminated = zip(*mini_batch)
             
         state = torch.stack(state)
         
@@ -191,7 +218,7 @@ class FlappyBirdAgent:
         with torch.no_grad():
             target_q_value = reward + (1 - terminated) * self.discount_factor * target(new_state).max(1)[0]
 
-            current_q_value = policy(state).gather(1, action.unsqueeze(1)).squeeze()
+        current_q_value = policy(state).gather(1, action.unsqueeze(1)).squeeze()
         
         
         # Compute the loss
@@ -210,7 +237,7 @@ if __name__ == "__main__":
     parser.add_argument('--train', help='Training mode', action='store_true')
     args = parser.parse_args()
 
-    dql = FlappyBirdAgent(hyperparameter_set=args.hyperparameters)
+    dql = FlappyBirdAgent(hyperparameters_set=args.hyperparameters)
 
     if args.train:
         dql.run(is_training=True)
