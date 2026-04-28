@@ -12,8 +12,8 @@ cartpole1:
   fc1_nodes: 10
   env_make_params:
     use_lidar: False
-  enable_double_dqn: True
-  enable_dueling_dqn: False
+  enable_double_dqn: False
+  enable_dueling_dqn: True
 
 
 flappybird1:
@@ -30,5 +30,5 @@ flappybird1:
   fc1_nodes: 512
   env_make_params:
     use_lidar: False
-  enable_double_dqn: True
-  enable_dueling_dqn: False
+  enable_double_dqn: False
+  enable_dueling_dqn: True

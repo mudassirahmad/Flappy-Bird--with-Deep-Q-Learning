@@ -50,7 +50,7 @@ class FlappyBirdAgent:
         self.fc1_nodes = hyperparameters["fc1_nodes"]
         self.env_make_params = hyperparameters.get("env_make_params",{})
         self.enable_double_dqn = hyperparameters["enable_double_dqn"]
-
+        self.enable_dueling_dqn = hyperparameters['enable_dueling_dqn'] 
 
         self.loss_fn = torch.nn.MSELoss()
         self.optimizer = None
@@ -91,14 +91,14 @@ class FlappyBirdAgent:
         run_actions = env.action_space.n
         rewards_per_episode = []
         epsilon_history = []
-        policy = DQN(num_states, run_actions, self.fc1_nodes).to(device)
+        policy = DQN(num_states, run_actions,self.fc1_nodes, self.enable_dueling_dqn).to(device)
 
         if is_training:
             replay_memory = ExperienceReplay(maxLen=10000, seed=42)
             
             epsilon = self.epsilon_init
 
-            target = DQN(num_states, run_actions, self.fc1_nodes).to(device)
+            target = DQN(num_states, run_actions,self.fc1_nodes, self.enable_dueling_dqn).to(device)
             target.load_state_dict(policy.state_dict())
 
             
