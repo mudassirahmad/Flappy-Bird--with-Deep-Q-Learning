@@ -49,7 +49,7 @@ class FlappyBirdAgent:
         self.network_sync_rate = hyperparameters["network_sync_rate"]
         self.fc1_nodes = hyperparameters["fc1_nodes"]
         self.env_make_params = hyperparameters.get("env_make_params",{})
-
+        self.enable_double_dqn = hyperparameters["enable_double_dqn"]
 
 
         self.loss_fn = torch.nn.MSELoss()
@@ -146,7 +146,9 @@ class FlappyBirdAgent:
                 # Store the model when the best reward is achieved
                 if is_training:
                     if episode_reward > best_reward:
-                        log_message = f"{datetime.now().strftime(DATE_FORMAT)}: New best reward {episode_reward:0.1f} ({(episode_reward-best_reward)/best_reward*100:+.1f}%) at episode {episode}, saving model..."
+                        improvement = f"{(episode_reward-best_reward)/best_reward*100:+.1f}%" if best_reward != float('-inf') else "first save"
+                        log_message = f"{datetime.now().strftime(DATE_FORMAT)}: New best reward {episode_reward:0.1f} ({improvement}) at episode {episode}"
+                        #log_message = f"{datetime.now().strftime(DATE_FORMAT)}: New best reward {episode_reward:0.1f} ({(episode_reward-best_reward)/best_reward*100:+.1f}%) at episode {episode}, saving model..."
                         print(log_message)
                         with open(self.LOG_FILE, "a") as log_file:
                             log_file.write(log_message + "\n")
@@ -164,7 +166,7 @@ class FlappyBirdAgent:
 
 
                 
-            rewards_per_episode.append(episode_reward)
+            rewards_per_episode.append(episode_reward.cpu().item() if torch.is_tensor(episode_reward) else episode_reward)
 
             if is_training:
                 epsilon = max(self.epsilon_min, epsilon * self.epsilon_decay)
@@ -184,9 +186,10 @@ class FlappyBirdAgent:
         fig=plt.figure(1)
         mean_rewards = np.zeros(len(rewards_per_episode))
         for x in range(len(mean_rewards)):
-            mean_rewards[x] = np.mean(rewards_per_episode[max(0, x-99):(x+1)])
+            mean_rewards[x] = np.mean([r.cpu().item() if torch.is_tensor(r) else r 
+                           for r in rewards_per_episode[max(0, x-99):(x+1)]])
 
-        plt.subplot(  1, 2, 1)
+        plt.subplot(  1, 2, 1)  
         plt.ylabel('Mean Rewards')
         plt.plot(mean_rewards)
         
@@ -214,9 +217,14 @@ class FlappyBirdAgent:
         reward = torch.stack(reward)
 
         terminated =  torch.tensor(terminated).float().to(device)
-
+        #double dqn: use policy to select the best action, but use target to calculate the q value of that action. This way we avoid overestimation bias.
         with torch.no_grad():
-            target_q_value = reward + (1 - terminated) * self.discount_factor * target(new_state).max(1)[0]
+            if self.enable_double_dqn:
+                best_actions = policy(new_state).argmax(1)
+                target_q_value = reward + (1 - terminated) * self.discount_factor * target(new_state).gather(1, best_actions.unsqueeze(1)).squeeze()
+            
+            else:
+                target_q_value = reward + (1 - terminated) * self.discount_factor * target(new_state).max(1)[0]
 
         current_q_value = policy(state).gather(1, action.unsqueeze(1)).squeeze()
         
