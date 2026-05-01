@@ -85,7 +85,7 @@ class FlappyBirdAgent:
             with open(self.LOG_FILE, 'w') as file:
                 file.write(log_message + '\n')
 
-        env = gymnasium.make("CartPole-v1", render_mode="human" if render else None)
+        env = gymnasium.make("FlappyBird-v0", render_mode="human" if render else None, **self.env_make_params)
 
         num_states = env.observation_space.shape[0]
         run_actions = env.action_space.n
@@ -94,7 +94,7 @@ class FlappyBirdAgent:
         policy = DQN(num_states, run_actions,self.fc1_nodes, self.enable_dueling_dqn).to(device)
 
         if is_training:
-            replay_memory = ExperienceReplay(maxLen=10000, seed=42)
+            replay_memory = ExperienceReplay(self.replay_memory_size)
             
             epsilon = self.epsilon_init
 
@@ -105,7 +105,7 @@ class FlappyBirdAgent:
             self.optimizer = torch.optim.Adam(policy.parameters(), lr=self.learning_rate_a)
             step_count = 0
 
-            best_reward = float('-inf')
+            best_reward = float(-9999999)
         else:
             policy.load_state_dict(torch.load(self.MODEL_FILE))
             policy.eval()
@@ -129,12 +129,13 @@ class FlappyBirdAgent:
                     action = torch.tensor(action, dtype=torch.int64, device=device)
                 else:
                     with torch.no_grad():
-                        action = policy(state.unsqueeze(0)).squeeze().argmax()
+                        action = policy(state.unsqueeze(dim=0)).squeeze().argmax()
                     
                 
                 # Processing:
                 new_state, reward, terminated, truncated, info = env.step(action.item())
                 # print(f"Terminated: {terminated}, Truncated: {truncated}, Reward: {episode_reward}")
+                episode_reward += reward
 
                 new_state = torch.tensor(new_state, dtype=torch.float32, device=device)
                 reward = torch.tensor(reward, dtype=torch.float32, device=device)
@@ -142,24 +143,9 @@ class FlappyBirdAgent:
                 if is_training:
                     replay_memory.append((state, action, new_state, reward, terminated))
 
-                episode_reward += reward
-                # Store the model when the best reward is achieved
-                if is_training:
-                    if episode_reward > best_reward:
-                        improvement = f"{(episode_reward-best_reward)/best_reward*100:+.1f}%" if best_reward != float('-inf') else "first save"
-                        log_message = f"{datetime.now().strftime(DATE_FORMAT)}: New best reward {episode_reward:0.1f} ({improvement}) at episode {episode}"
-                        #log_message = f"{datetime.now().strftime(DATE_FORMAT)}: New best reward {episode_reward:0.1f} ({(episode_reward-best_reward)/best_reward*100:+.1f}%) at episode {episode}, saving model..."
-                        print(log_message)
-                        with open(self.LOG_FILE, "a") as log_file:
-                            log_file.write(log_message + "\n")
-                        torch.save(policy.state_dict(), self.MODEL_FILE)
-                        best_reward = episode_reward
-                        self.save_to_kaggle_output()
-
-                    current_time = datetime.now()
-                    if current_time - last_graph_update_time >= timedelta(seconds=0):
-                        self.save_graph(rewards_per_episode, epsilon_history)
-                        last_graph_update_time = current_time
+                    step_count += 1
+                
+                
                 
                 #move to the next state
                 state = new_state
@@ -167,20 +153,37 @@ class FlappyBirdAgent:
 
                 
             rewards_per_episode.append(episode_reward.cpu().item() if torch.is_tensor(episode_reward) else episode_reward)
-
+            
+            # Store the model when the best reward is achieved
             if is_training:
-                epsilon = max(self.epsilon_min, epsilon * self.epsilon_decay)
-                epsilon_history.append(epsilon)
+                if episode_reward > best_reward:
+                    improvement = f"{(episode_reward-best_reward)/best_reward*100:+.1f}%" if best_reward != float('-inf') else "first save"
+                    log_message = f"{datetime.now().strftime(DATE_FORMAT)}: New best reward {episode_reward:0.1f} ({improvement}) at episode {episode}"
+                    #log_message = f"{datetime.now().strftime(DATE_FORMAT)}: New best reward {episode_reward:0.1f} ({(episode_reward-best_reward)/best_reward*100:+.1f}%) at episode {episode}, saving model..."
+                    print(log_message)
+                    with open(self.LOG_FILE, "a") as log_file:
+                        log_file.write(log_message + "\n")
+                    torch.save(policy.state_dict(), self.MODEL_FILE)
+                    best_reward = episode_reward
+                    self.save_to_kaggle_output()
+
+                current_time = datetime.now()
+                if current_time - last_graph_update_time >= timedelta(seconds=10):
+                    self.save_graph(rewards_per_episode, epsilon_history)
+                    last_graph_update_time = current_time
 
 
-            if is_training and len(replay_memory) >= self.mini_batch_size:
-                mini_batch = replay_memory.sample(self.mini_batch_size)
-                self.optimize_model(mini_batch, policy, target)
 
-                step_count += 1
-                if step_count >= self.network_sync_rate:
-                    target.load_state_dict(policy.state_dict())
-                    step_count = 0
+                if len(replay_memory) >= self.mini_batch_size:
+                    mini_batch = replay_memory.sample(self.mini_batch_size)
+                    self.optimize_model(mini_batch, policy, target)
+
+                    epsilon = max(self.epsilon_min, epsilon * self.epsilon_decay)
+                    epsilon_history.append(epsilon)
+
+                    if step_count >= self.network_sync_rate:
+                        target.load_state_dict(policy.state_dict())
+                        step_count = 0
 
     def save_graph(self, rewards_per_episode, epsilon_history):
         fig=plt.figure(1)
@@ -221,12 +224,12 @@ class FlappyBirdAgent:
         with torch.no_grad():
             if self.enable_double_dqn:
                 best_actions = policy(new_state).argmax(1)
-                target_q_value = reward + (1 - terminated) * self.discount_factor * target(new_state).gather(1, best_actions.unsqueeze(1)).squeeze()
+                target_q_value = reward + (1 - terminated) * self.discount_factor * target(new_state).gather(dim=1, index=best_actions.unsqueeze(1)).squeeze()
             
             else:
-                target_q_value = reward + (1 - terminated) * self.discount_factor * target(new_state).max(1)[0]
+                target_q_value = reward + (1 - terminated) * self.discount_factor * target(new_state).max(dim=1)[0]
 
-        current_q_value = policy(state).gather(1, action.unsqueeze(1)).squeeze()
+        current_q_value = policy(state).gather(dim=1, index=action.unsqueeze(dim=1)).squeeze()
         
         
         # Compute the loss
@@ -251,5 +254,4 @@ if __name__ == "__main__":
         dql.run(is_training=True)
     else:
         dql.run(is_training=False, render=True)
-    agent = FlappyBirdAgent("cartpole1")
-    agent.run(is_training=True, render=True)
+    

@@ -1,4 +1,19 @@
-04-28 16:24:27: Training starting...
-04-28 16:24:32: New best reward 1.0 (first save) at episode 0
-04-28 16:24:36: New best reward 17.0 (+6.2%) at episode 2
-04-28 16:24:47: New best reward 27.0 (+3.8%) at episode 6
+04-29 15:51:15: Training starting...
+04-29 15:51:19: New best reward -8.1 (-100.0%) at episode 0
+04-29 15:51:20: New best reward -6.9 (-14.8%) at episode 5
+04-29 15:51:20: New best reward -4.5 (-34.8%) at episode 6
+04-29 15:51:25: New best reward -3.3 (-26.7%) at episode 250
+04-29 15:51:40: New best reward -2.1 (-36.4%) at episode 748
+04-29 15:52:06: New best reward -1.5 (-28.6%) at episode 1614
+04-29 15:52:44: New best reward -0.3 (-80.0%) at episode 2708
+04-29 15:52:53: New best reward 3.9 (-1400.0%) at episode 2969
+04-29 15:58:11: New best reward 4.1 (+5.1%) at episode 10634
+04-29 15:58:22: New best reward 4.3 (+4.9%) at episode 10872
+04-29 15:58:50: New best reward 4.4 (+2.3%) at episode 11441
+04-29 15:59:49: New best reward 6.5 (+47.7%) at episode 12635
+04-29 16:01:32: New best reward 8.4 (+29.2%) at episode 14635
+04-29 16:10:56: New best reward 8.5 (+1.2%) at episode 24198
+04-29 16:12:16: New best reward 9.4 (+10.6%) at episode 25413
+04-29 16:17:18: New best reward 11.1 (+18.1%) at episode 29796
+04-29 16:23:34: New best reward 12.9 (+16.2%) at episode 34860
+04-29 16:27:06: New best reward 15.4 (+19.4%) at episode 37622
