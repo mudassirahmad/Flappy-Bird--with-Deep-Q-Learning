@@ -169,4 +169,3 @@ python agent.py flappybird1
 
 - [Flappy Bird Gymnasium](https://github.com/markub3327/flappy-bird-gymnasium) for the Flappy Bird environment
 - [OpenAI Gymnasium](https://gymnasium.farama.org/environments/classic_control/cart_pole/) for the CartPole environment
-- Deep Mind's original DQN paper: *Playing Atari with Deep Reinforcement Learning*
