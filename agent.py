@@ -114,6 +114,14 @@ class FlappyBirdAgent:
                 print("Resuming from saved model...")
                 policy.load_state_dict(torch.load(self.MODEL_FILE))
                 target.load_state_dict(torch.load(self.MODEL_FILE))
+
+                ############# 
+                # ON Your first run make sure to comment out the following lines that load the previous best reward and epsilon value, 
+                # otherwise it will resume with the best reward and epsilon value from the previous run which might not be ideal for your first run. 
+                # After your first run, you can uncomment these lines to enable resuming with the previous best reward and epsilon value for continued training.
+                #############
+                
+                
                 #loading previous best reward for continued model training
                 # best_reward_file = os.path.join(RUNS_DIR, f'{self.hyperparameters_set}_best_reward.txt')
                 # if os.path.exists(best_reward_file):
