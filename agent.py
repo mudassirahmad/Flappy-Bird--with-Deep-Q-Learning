@@ -73,7 +73,10 @@ class FlappyBirdAgent:
         # Copy log
         if os.path.exists(self.LOG_FILE):
             shutil.copy(self.LOG_FILE, f'/kaggle/output/runs/{self.hyperparameters_set}.log')
-
+        # Save epsilon value too
+        epsilon_file = os.path.join(RUNS_DIR, f'{self.hyperparameters_set}_epsilon.txt')
+        if os.path.exists(epsilon_file):
+            shutil.copy(epsilon_file, f'/kaggle/output/runs/{self.hyperparameters_set}_epsilon.txt')
     def run(self, is_training=True, render=False): 
 
         if is_training:
@@ -106,6 +109,25 @@ class FlappyBirdAgent:
             step_count = 0
 
             best_reward = float(-9999999)
+            # added check for existing model to resume training from the last model because kaggle sessions can be interrupted after 12 hours
+            if os.path.exists(self.MODEL_FILE):
+                print("Resuming from saved model...")
+                policy.load_state_dict(torch.load(self.MODEL_FILE))
+                target.load_state_dict(torch.load(self.MODEL_FILE))
+                #loading previous best reward for continued model training
+                # best_reward_file = os.path.join(RUNS_DIR, f'{self.hyperparameters_set}_best_reward.txt')
+                # if os.path.exists(best_reward_file):
+                #     with open(best_reward_file, 'r') as f:
+                #         best_reward = float(f.read())
+                #     print(f"Resuming with best reward: {best_reward}")
+                #loading previous epsilon value for continued model training
+                # epsilon_file = os.path.join(RUNS_DIR, f'{self.hyperparameters_set}_epsilon.txt')
+                # if os.path.exists(epsilon_file):
+                #     with open(epsilon_file, 'r') as f:
+                #         epsilon = float(f.read())
+                #     print(f"Resuming with epsilon: {epsilon}")
+                best_reward = 332.6
+                epsilon = self.epsilon_min
         else:
             policy.load_state_dict(torch.load(self.MODEL_FILE))
             policy.eval()
@@ -165,9 +187,18 @@ class FlappyBirdAgent:
                         log_file.write(log_message + "\n")
                     torch.save(policy.state_dict(), self.MODEL_FILE)
                     best_reward = episode_reward
+                    
+                    # Save epsilon
+                    with open(os.path.join(RUNS_DIR, f'{self.hyperparameters_set}_epsilon.txt'), 'w') as f:
+                        f.write(str(epsilon))
+                    # Save best reward
+                    with open(os.path.join(RUNS_DIR, f'{self.hyperparameters_set}_best_reward.txt'), 'w') as f:
+                        f.write(str(best_reward))
+
                     self.save_to_kaggle_output()
 
                 current_time = datetime.now()
+
                 if current_time - last_graph_update_time >= timedelta(seconds=10):
                     self.save_graph(rewards_per_episode, epsilon_history)
                     last_graph_update_time = current_time
